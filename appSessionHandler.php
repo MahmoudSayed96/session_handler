@@ -3,6 +3,11 @@
 /**
  * Custom session class handler
  * class functionality [start,kill,read,write]
+ * 
+ * start() => Start session
+ * kill() => Session destroy
+ * read() => Get session data based on session id
+ * write() => Register data in session 
  */
 
 // Determined the path for save session file
@@ -11,25 +16,29 @@ define('SESSION_SAVE_PATH', dirname(realpath(__FILE__)) . DIRECTORY_SEPARATOR . 
 class AppSessionHandler extends SessionHandler
 {
     // cookies params
-    private $sessionName = 'MYAPPESS';
-    private $sessionMaxLifetime = 0;
+    private $sessionName = SESSION_NAME;
+    private $sessionMaxLifetime = SESSION_LIFE_TIME;
     private $sessionSSL = false;
     private $sessionHttpOnly = true;
     private $sessionPath = '/';
-    private $sessionDomin = '.phpdev.com';
+    private $sessionDomin = SESSION_DOMIN;
     private $sessionSavePath = SESSION_SAVE_PATH;
 
     private $sessionTimeToLife = 30;
 
     // mcrypt data props
-    private $sessionCipherAlgo = MCRYPT_BLOWFISH;
+    private $sessionCipherAlgo = 'AES-128-ECB';
     private $sessionCipherMode = MCRYPT_MODE_ECB;
     private $sessionCipherKey = 'WYCRYPTK3Y@2019';
+
 
     // METHODS
 
     public function __construct()
     {
+        $this->sessionSSL = isset($_SERVER['HTTPS']) ? true : false;
+        $this->sessionDomain = str_replace('www.', '', $_SERVER['SERVER_NAME']);
+
         // Session Runtime configuration
 
         // Override file php.ini
@@ -39,7 +48,9 @@ class AppSessionHandler extends SessionHandler
         ini_set('session.save_handler', 'files');
 
         session_name($this->sessionName);
+
         session_save_path($this->sessionSavePath);
+
         session_set_cookie_params(
             $this->sessionMaxLifetime,
             $this->sessionPath,
@@ -47,25 +58,29 @@ class AppSessionHandler extends SessionHandler
             $this->sessionSSL,
             $this->sessionHttpOnly
         );
-        // For make this object control on SessionHandlerInterface
-        session_set_save_handler(
-            array($this, 'open'),
-            array($this, 'close'),
-            array($this, 'read'),
-            array($this, 'write'),
-            array($this, 'destroy'),
-            array($this, 'gc')
-        );
     }
 
     public function __get($key)
     {
-        return (isset($_SESSION[$key])) ? $_SESSION[$key] : false;
+        if (isset($_SESSION[$key])) {
+            $data = @unserialize($_SESSION[$key]);
+            if ($data === false) {
+                return $_SESSION[$key];
+            } else {
+                return $data;
+            }
+        } else {
+            trigger_error('No session key ' . $key . ' exists', E_USER_NOTICE);
+        }
     }
 
     public function __set($key, $value)
     {
-        $_SESSION[$key] = $value;
+        if (is_object($value)) {
+            $_SESSION[$key] = serialize($value);
+        } else {
+            $_SESSION[$key] = $value;
+        }
     }
 
     public function __isset($key)
@@ -78,33 +93,31 @@ class AppSessionHandler extends SessionHandler
         // get cipher data
         $cipher_data = parent::read($session_id);
         // convert cipher data to plain data
-        $plain_text_data = mcrypt_decrypt(
-            $this->sessionCipherAlgo,
-            $this->sessionCipherKey,
+        $plain_text_data = openssl_decrypt(
             $cipher_data,
-            $this->sessionCipherMode
+            $this->sessionCipherAlgo,
+            $this->sessionCipherKey
         );
         return $plain_text_data;
     }
 
     public function write($session_id, $session_data)
     {
-        $cipher_data = mcrypt_encrypt(
-            $this->sessionCipherAlgo,
-            $this->sessionCipherKey,
+        $cipher_data = openssl_encrypt(
             $session_data,
-            $this->sessionCipherMode
+            $this->sessionCipherAlgo,
+            $this->sessionCipherKey
         );
         return parent::write($session_id, $cipher_data);
     }
 
-    /**
+    /****
      * start()
-     * TODO: Start session and create one session file
-     * TODO: Set session start time => setSessionStartTime();
-     * TODO: Check session time to life was finished => checkSessionTimeValidation();
+     * Start session and create one session file
+     * Set session start time => setSessionStartTime();
+     * Check session time to life was finished => checkSessionTimeValidation();
      * 
-     */
+     *****/
     public function start()
     {
         // Checking session exists
@@ -133,26 +146,26 @@ class AppSessionHandler extends SessionHandler
         return true;
     }
 
-    /**
+    /*****
      * renewSession();
      * 
-     * TODO: reset session start time
-     * TODO: regenerate session id => session_regenerate_id(true);
+     * reset session start time
+     * regenerate session id => session_regenerate_id(true);
      * * true - for delete old session id
-     */
+     *****/
     private function renewSession()
     {
         $this->sessionStartTime = time(); // reset session start time
         return session_regenerate_id(true);
     }
 
-    /**
+    /*****
      * kill()
      * 
-     * TODO: Make $_SESSION empty =>session_unset();
-     * TODO: Delete cookie
-     * TODO: Destroy session
-     */
+     *  Make $_SESSION empty =>session_unset();
+     *  Delete cookie
+     *  Destroy session
+     *****/
     public function kill()
     {
         session_unset();
